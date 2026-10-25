@@ -31840,7 +31840,8 @@ const github = __nccwpck_require__(3228);
 const MINIMAX_API_URL = 'https://api.minimaxi.chat/v1/chat/completions';
 const COMMENT_MARKER = '<!-- minimax-code-review -->';
 const MAX_RESPONSE_SIZE = 1024 * 1024;
-const REQUEST_TIMEOUT_MS = 300_000;
+const DEFAULT_REQUEST_TIMEOUT_SECONDS = 300;
+const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 function matchesPattern(filename, pattern) {
   const escaped = pattern
@@ -31905,9 +31906,20 @@ function buildPrompt(files, maxDiffChars) {
   return diffs;
 }
 
-async function reviewWithMiniMax(apiKey, model, systemPrompt, diff) {
+async function reviewWithMiniMax(apiKey, model, systemPrompt, diff, reasoningEffort, timeoutSeconds) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
+
+  const payload = {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Please review this pull request:\n\n${diff}` },
+    ],
+  };
+  if (reasoningEffort) {
+    payload.reasoning_effort = reasoningEffort;
+  }
 
   let response;
   try {
@@ -31917,18 +31929,12 @@ async function reviewWithMiniMax(apiKey, model, systemPrompt, diff) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Please review this pull request:\n\n${diff}` },
-        ],
-      }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
   } catch (err) {
     if (err.name === 'AbortError') {
-      throw new Error('MiniMax API request timed out.');
+      throw new Error(`MiniMax API request timed out after ${timeoutSeconds} seconds.`);
     }
     throw err;
   } finally {
@@ -31970,6 +31976,12 @@ async function run() {
     .map(p => p.trim())
     .filter(p => p.length > 0);
   const maxDiffChars = parseInt(core.getInput('MAX_DIFF_CHARS'), 10) || 0;
+  const reasoningEffort = core.getInput('MINIMAX_REASONING_EFFORT').trim().toLowerCase();
+  if (reasoningEffort && !REASONING_EFFORTS.includes(reasoningEffort)) {
+    core.setFailed(`Invalid MINIMAX_REASONING_EFFORT "${reasoningEffort}". Use one of: ${REASONING_EFFORTS.join(', ')}.`);
+    return;
+  }
+  const timeoutSeconds = parseInt(core.getInput('REQUEST_TIMEOUT_SECONDS'), 10) || DEFAULT_REQUEST_TIMEOUT_SECONDS;
   const token = core.getInput('GITHUB_TOKEN');
   core.setSecret(token);
 
@@ -31984,7 +31996,7 @@ async function run() {
   const { owner, repo } = context.repo;
   const pull_number = context.payload.pull_request.number;
 
-  core.info(`Reviewing PR #${pull_number} with model ${model}...`);
+  core.info(`Reviewing PR #${pull_number} with model ${model}${reasoningEffort ? ` (reasoning effort: ${reasoningEffort})` : ''}...`);
 
   const files = await getChangedFiles(octokit, owner, repo, pull_number);
   const filteredFiles = filterFiles(files, excludePatterns);
@@ -32002,7 +32014,7 @@ async function run() {
   }
 
   const diff = buildPrompt(filteredFiles, maxDiffChars);
-  const review = await reviewWithMiniMax(apiKey, model, systemPrompt, diff);
+  const review = await reviewWithMiniMax(apiKey, model, systemPrompt, diff, reasoningEffort, timeoutSeconds);
   const body = `## ${reviewerName}\n\n${review}\n\n${COMMENT_MARKER}`;
 
   const { data: comments } = await octokit.rest.issues.listComments({

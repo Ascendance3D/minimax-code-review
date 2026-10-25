@@ -24,6 +24,14 @@ inputs:
     description: "Maximum total characters for the diff sent to the API (0 = unlimited)"
     required: false
     default: "0"
+  MINIMAX_REASONING_EFFORT:
+    description: "Reasoning effort sent as reasoning_effort: low, medium, high, xhigh, or max. Empty omits the field (the model default applies). Only reasoning-effort models such as MiniMax-M3.1-Flash accept it."
+    required: false
+    default: ""
+  REQUEST_TIMEOUT_SECONDS:
+    description: "Seconds to wait for the MiniMax API response before failing"
+    required: false
+    default: "300"
   GITHUB_TOKEN:
     description: "GitHub token for API access"
     required: false

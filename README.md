@@ -44,6 +44,8 @@ jobs:
 | `MINIMAX_REVIEWER_NAME` | No | `MiniMax Code Review` | Name shown in the review comment header |
 | `EXCLUDE_PATTERNS` | No | `*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml` | Comma-separated file patterns to exclude from review |
 | `MAX_DIFF_CHARS` | No | `0` (unlimited) | Maximum total characters for the diff sent to the API |
+| `MINIMAX_REASONING_EFFORT` | No | empty (model default) | `low`, `medium`, `high`, `xhigh`, or `max`, sent as `reasoning_effort`. Only reasoning-effort models such as `MiniMax-M3.1-Flash` accept it; that model defaults to `max` |
+| `REQUEST_TIMEOUT_SECONDS` | No | `300` | Seconds to wait for the MiniMax API response before failing |
 
 The default system prompt is:
 
